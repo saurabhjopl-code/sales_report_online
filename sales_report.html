@@ -27,33 +27,13 @@
       font-size: 20px;
       font-weight: 600;
     }
-    .upload-box {
+    .header-right {
+      font-size: 12px;
+      color: #d1d5db;
       display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    input[type="file"] { padding: 4px; }
-    button {
-      border: none;
-      padding: 8px 14px;
-      border-radius: 999px;
-      background: #10b981;
-      color: white;
-      font-weight: 500;
-      cursor: pointer;
-      font-size: 14px;
-      transition: transform 0.05s ease, box-shadow 0.1s ease, background 0.1s ease;
-      box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4);
-    }
-    button:hover {
-      background: #059669;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 10px rgba(16, 185, 129, 0.5);
-    }
-    button:active {
-      transform: translateY(0);
-      box-shadow: 0 1px 3px rgba(16, 185, 129, 0.5);
+      flex-direction: column;
+      gap: 2px;
+      text-align: right;
     }
     main {
       max-width: 1300px;
@@ -257,23 +237,24 @@
 <body>
 <header>
   <h1>Sales & Returns Report</h1>
-  <div class="upload-box">
-    <input type="file" id="fileInput" accept=".csv" />
-    <button id="processBtn">Generate Report</button>
+  <div class="header-right">
+    <span>Data source: CSV files from <strong>data/</strong> folder</span>
+    <span>Loaded automatically (no upload needed)</span>
   </div>
 </header>
 
 <main>
   <p class="info-note">
-    CSV must have these columns (header row):  
+    CSV files (multiple allowed) must contain a header row with:  
     <strong>
       ACCOUNT, Order ID, SKU, Uniware SKU, Style ID, Sizes, Event Type,
       Fulfilment Type, Order Date, Item Quantity,
       Price before discount, Customer's Delivery State, MP
-    </strong>
+    </strong>  
+    Any extra lines <em>above</em> the header will be ignored.
   </p>
 
-  <div id="status" class="status">No file loaded.</div>
+  <div id="status" class="status">Loading data…</div>
 
   <!-- Filters -->
   <div class="filter-bar">
@@ -588,38 +569,19 @@
       </div>
     </div>
   </section>
-
-  <!-- Return Analysis -->
-  <section>
-    <h2>Return Analysis <span>Month-level impact</span></h2>
-    <div class="card">
-      <div class="table-wrapper">
-        <table id="table-return-identity">
-          <thead>
-          <tr>
-            <th>Month</th>
-            <th>Total Units Sold</th>
-            <th>Order vs Order Return %</th>
-            <th>SKU vs SKU Return %</th>
-          </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <div class="small-note">
-        Order vs Order Return % = Orders with at least one return / Orders with sales.<br>
-        SKU vs SKU Return % = SKUs with at least one return / SKUs with sales.
-      </div>
-    </div>
-  </section>
 </main>
 
 <!-- Chart.js CDN -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
-  const fileInput = document.getElementById("fileInput");
-  const processBtn = document.getElementById("processBtn");
+  // 🔹 1. List of CSV files to load from GitHub (edit this for your repo)
+  const DATA_FILES = [
+    "data/orders_jan.csv",
+    "data/orders_feb.csv",
+    // add more files here, e.g. "data/orders_mar.csv"
+  ];
+
   const statusEl = document.getElementById("status");
   const filterMpEl = document.getElementById("filter-mp");
   const filterMonthEl = document.getElementById("filter-month");
@@ -640,8 +602,8 @@
     if (type) statusEl.classList.add(type);
   }
 
-  // Current basic CSV parser (safe parser will be added later)
-  function parseCSV(text) {
+  // 🔹 2. Safe CSV parser: finds real header row & ignores junk above it
+  function parseCSVSafe(text) {
     const lines = text
       .split(/\r?\n/)
       .map((l) => l.trim())
@@ -649,11 +611,25 @@
 
     if (lines.length < 2) return [];
 
-    const headers = lines[0].split(",").map((h) => h.trim());
+    // Find header line (must contain Order ID and Style ID)
+    let headerIndex = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const low = lines[i].toLowerCase();
+      if (low.includes("order id") && low.includes("style id")) {
+        headerIndex = i;
+        break;
+      }
+    }
+    if (headerIndex === -1) {
+      return [];
+    }
+
+    const headers = lines[headerIndex].split(",").map((h) => h.trim());
     const rows = [];
 
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = headerIndex + 1; i < lines.length; i++) {
       const parts = lines[i].split(",");
+      if (!parts.length) continue;
       const row = {};
       headers.forEach((h, idx) => {
         row[h] = (parts[idx] || "").trim();
@@ -924,8 +900,7 @@
       setStatus("No rows found for current filter.", "error");
       [
         "table-account","table-mp","table-fulfilment","table-state","table-sku",
-        "table-top-style-units","table-top-style-revenue","table-top-style-returns",
-        "table-return-identity"
+        "table-top-style-units","table-top-style-revenue","table-top-style-returns"
       ].forEach(id => {
         const tbody = document.querySelector(`#${id} tbody`);
         tbody.innerHTML = "";
@@ -1100,7 +1075,7 @@
       return combined;
     }
 
-    // Fulfilment & MP table (now with GMV & total units)
+    // Fulfilment & MP table (with GMV & total units)
     const saleFulMp = aggregateBy(sales, ["Fulfilment Type", "MP"]);
     const returnFulMp = aggregateBy(returns, ["Fulfilment Type", "MP"]);
     const cancelFulMp = aggregateBy(cancels, ["Fulfilment Type", "MP"]);
@@ -1224,7 +1199,7 @@
       "Return Qty": formatNumber(r.returnQty),
       "Return Amount": formatMoney(r.returnAmt),
       "Net Qty": formatNumber(r.netQty),
-      "Net Amount": formatMoney(r.netAmt),
+      "Net Amount": formatNumber(r.netAmt),
       "Return %": formatPercent(r.retPct),
     }));
 
@@ -1445,84 +1420,6 @@
       "Return %",
     ]);
 
-    // === Return Analysis (Month-level) ===
-    const monthStats = new Map();
-    for (const row of rows) {
-      const mk = monthKeyFromDateStr(row["Order Date"]);
-      if (!mk) continue;
-      const et = lower(row["Event Type"]);
-      const isSale = et.includes("sale");
-      const isReturn = et.includes("return");
-      const isCancel = et.includes("cancel");
-
-      if (!monthStats.has(mk)) {
-        monthStats.set(mk, {
-          totalUnits: 0,
-          saleOrders: new Set(),
-          returnOrders: new Set(),
-          saleSkus: new Set(),
-          returnSkus: new Set(),
-        });
-      }
-      const st = monthStats.get(mk);
-      const qty = toNumber(row["Item Quantity"]);
-      if (isSale || isReturn || isCancel) {
-        st.totalUnits += qty;
-      }
-
-      const orderId = (row["Order ID"] || "").trim();
-      const sku = (row["SKU"] || "").trim();
-
-      if (isSale) {
-        if (orderId) st.saleOrders.add(orderId);
-        if (sku) st.saleSkus.add(sku);
-      }
-      if (isReturn) {
-        if (orderId) st.returnOrders.add(orderId);
-        if (sku) st.returnSkus.add(sku);
-      }
-    }
-
-    function setIntersectionSize(a, b) {
-      let count = 0;
-      const small = a.size < b.size ? a : b;
-      const big = a.size < b.size ? b : a;
-      small.forEach(v => {
-        if (big.has(v)) count++;
-      });
-      return count;
-    }
-
-    const rowsReturnMonthly = Array.from(monthStats.entries()).map(([mk, st]) => {
-      const ordersWithReturn = setIntersectionSize(st.saleOrders, st.returnOrders);
-      const skusWithReturn = setIntersectionSize(st.saleSkus, st.returnSkus);
-
-      const orderReturnPct = st.saleOrders.size
-        ? ordersWithReturn / st.saleOrders.size
-        : 0;
-      const skuReturnPct = st.saleSkus.size
-        ? skusWithReturn / st.saleSkus.size
-        : 0;
-
-      return {
-        "Month": monthLabel(mk),
-        "Total Units Sold": formatNumber(st.totalUnits),
-        "Order vs Order Return %": formatPercent(orderReturnPct),
-        "SKU vs SKU Return %": formatPercent(skuReturnPct),
-        // use mk for sorting
-        _monthKey: mk
-      };
-    });
-
-    rowsReturnMonthly.sort((a, b) => (a._monthKey < b._monthKey ? 1 : -1));
-
-    renderTable("table-return-identity", rowsReturnMonthly, [
-      "Month",
-      "Total Units Sold",
-      "Order vs Order Return %",
-      "SKU vs SKU Return %"
-    ]);
-
     // === CHARTS ===
 
     // MP Share (GMV) – doughnut
@@ -1564,10 +1461,9 @@
       const agg = new Map();
       rowsFul.forEach(r => {
         const f = r["Fulfilment Type"];
-        // Use sale quantity basis: approximate via Return + Net? leave simple: use Net+Return as proxy or original sale qty; here we stick with Net+Return.
         const net = parseFloat((r["Net Qty"] || "0").replace(/,/g, "")) || 0;
         const ret = parseFloat((r["Return Qty"] || "0").replace(/,/g, "")) || 0;
-        const qty = net + ret;
+        const qty = net + ret; // approx sale qty
         agg.set(f, (agg.get(f) || 0) + qty);
       });
       const labels = Array.from(agg.keys());
@@ -1583,40 +1479,58 @@
     });
 
     setStatus(
-      `Report generated on ${new Date().toLocaleString()} from ${rows.length} rows (filtered).`,
+      `Report generated from ${rows.length} rows (filtered) out of ${rawRows.length} total loaded.`,
       "success"
     );
   }
 
-  processBtn.addEventListener("click", () => {
-    const file = fileInput.files[0];
-    if (!file) {
-      setStatus("Please select a CSV file first.", "error");
+  // 🔹 3. Load all CSV files from DATA_FILES on page load
+  function loadAllDataFromGithub() {
+    if (!DATA_FILES.length) {
+      setStatus("No CSV files configured in DATA_FILES.", "error");
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        rawRows = parseCSV(e.target.result || "");
+    setStatus("Loading data from CSV files…");
+
+    Promise.all(
+      DATA_FILES.map((path) =>
+        fetch(path).then((res) => {
+          if (!res.ok) throw new Error("Failed to load " + path);
+          return res.text();
+        })
+      )
+    )
+      .then((texts) => {
+        let allRows = [];
+        texts.forEach((txt, index) => {
+          const rows = parseCSVSafe(txt);
+          allRows = allRows.concat(rows);
+        });
+
+        rawRows = allRows;
         if (!rawRows.length) {
-          setStatus("No valid rows found in CSV.", "error");
+          setStatus("No valid rows found in any CSV.", "error");
           return;
         }
+
         initFilters(rawRows);
         styleFilterText = "";
         filterStyleEl.value = "";
         styleSuggestionsEl.innerHTML = "";
         const filteredRows = getFilteredRows();
-        setStatus("File loaded. Processing…");
         computeAndRender(filteredRows);
-      } catch (err) {
+        setStatus(
+          `Loaded ${rawRows.length.toLocaleString("en-IN")} rows from ${DATA_FILES.length} file(s).`,
+          "success"
+        );
+      })
+      .catch((err) => {
         console.error(err);
-        setStatus("Error reading file. Check CSV format.", "error");
-      }
-    };
-    reader.readAsText(file);
-  });
+        setStatus("Error loading CSV files. Check file paths & GitHub setup.", "error");
+      });
+  }
 
+  // Filter events
   filterMpEl.addEventListener("change", () => {
     if (!rawRows.length) return;
     const rows = getFilteredRows();
@@ -1648,6 +1562,9 @@
       styleSuggestionsEl.innerHTML = "";
     }
   });
+
+  // 🔹 Start loading once page is ready
+  document.addEventListener("DOMContentLoaded", loadAllDataFromGithub);
 </script>
 </body>
 </html>
