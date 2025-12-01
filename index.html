@@ -272,12 +272,12 @@
 <header>
   <div class="brand-left">
     <img
-      src="assets/RFIL LOGO.png"
-      alt="RFIL Logo"
+      src="assets/rfil-logo.png"
+      alt="Rajnandini Fashion India Logo"
       class="brand-logo"
     />
     <div>
-      <div class="brand-name" align="center">RAJNANDINI FASHION INDIA LIMITED</div>
+      <div class="brand-name">RAJNANDINI FASHION INDIA LIMITED</div>
       <div class="brand-tagline">A STYLE OF EVERY STORY</div>
       <div class="brand-subline">Sales & Returns Performance Dashboard</div>
     </div>
@@ -296,7 +296,7 @@
       Fulfilment Type, Order Date, Item Quantity,
       Price before discount, Customer's Delivery State, MP
     </strong>  
-    Any extra lines <em>above</em> the header will be ignored.
+    Header must be the first non-empty line (or 2nd after a <code>sep=,</code> line).
   </p>
 
   <div id="status" class="status">Loading data…</div>
@@ -307,6 +307,12 @@
       MP
       <select id="filter-mp">
         <option value="ALL">All MP</option>
+      </select>
+    </label>
+    <label>
+      Year
+      <select id="filter-year">
+        <option value="ALL">All Years</option>
       </select>
     </label>
     <label>
@@ -615,7 +621,7 @@
         </div>
       </div>
       <div class="small-note">
-        These top lists respect the MP, Month, Account and Style/SKU filters above.
+        These top lists respect the MP, Year, Month, Account and Style/SKU filters above.
       </div>
     </div>
   </section>
@@ -631,14 +637,14 @@
 <script>
   // 1) CSV files to load from GitHub
   const DATA_FILES = [
-  "data/reports.csv",
-  "data/reports-1.csv",
-  "data/reports-2.csv"
-      // update / add more CSVs if needed
+    "data/reports.csv",
+    "data/reports-1.csv",
+    "data/reports-2.csv"
   ];
 
   const statusEl = document.getElementById("status");
   const filterMpEl = document.getElementById("filter-mp");
+  const filterYearEl = document.getElementById("filter-year");
   const filterMonthEl = document.getElementById("filter-month");
   const filterAccountEl = document.getElementById("filter-account");
   const filterStyleEl = document.getElementById("filter-style");
@@ -657,34 +663,36 @@
     if (type) statusEl.classList.add(type);
   }
 
-  // 2) Safe CSV parser: finds real header row & ignores junk
+  // 2) Simplified CSV parser:
+  //    - First non-empty line is header
+  //    - If first line is "sep=,", header is the next non-empty line
   function parseCSVSafe(text) {
-    const lines = text
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
+    const linesRaw = text.split(/\r?\n/);
+    const cleaned = linesRaw.map(l => l.replace(/\r/g, ""));
+    const nonEmpty = cleaned.filter(l => l.trim().length > 0);
+    if (!nonEmpty.length) return [];
 
-    if (lines.length < 2) return [];
-
-    // find header line (must contain Order ID and Style ID)
-    let headerIndex = -1;
-    for (let i = 0; i < lines.length; i++) {
-      const low = lines[i].toLowerCase();
-      if (low.includes("order id") && low.includes("style id")) {
-        headerIndex = i;
-        break;
-      }
+    let headerIndex = 0;
+    if (nonEmpty[0].trim().toLowerCase().startsWith("sep=")) {
+      headerIndex = 1;
     }
-    if (headerIndex === -1) return [];
+    if (nonEmpty.length <= headerIndex + 1) return [];
 
-    const headers = lines[headerIndex].split(",").map((h) => h.trim());
+    const headerLine = nonEmpty[headerIndex].trim();
+    const headers = headerLine.split(",").map(h =>
+      h.trim().replace(/^"|"$/g, "")
+    );
+
     const rows = [];
-    for (let i = headerIndex + 1; i < lines.length; i++) {
-      const parts = lines[i].split(",");
-      if (!parts.length) continue;
+    for (let i = headerIndex + 1; i < nonEmpty.length; i++) {
+      const line = nonEmpty[i].trim();
+      if (!line) continue;
+      const parts = line.split(",");
       const row = {};
       headers.forEach((h, idx) => {
-        row[h] = (parts[idx] || "").trim();
+        row[h] = (parts[idx] || "")
+          .trim()
+          .replace(/^"|"$/g, "");
       });
       rows.push(row);
     }
@@ -778,7 +786,7 @@
     charts[key] = new Chart(ctx, config);
   }
 
-  // DD-MM-YYYY → YYYY-MM
+  // Date helper: dd-mm-yyyy → "YYYY-MM"
   function monthKeyFromDateStr(dateStr) {
     if (!dateStr) return null;
     const s = String(dateStr).trim();
@@ -803,14 +811,7 @@
     return `${year}-${String(month).padStart(2, "0")}`;
   }
 
-  function monthLabel(ym) {
-    const [y, m] = ym.split("-");
-    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul",
-                        "Aug", "Sep", "Oct", "Nov", "Dec"];
-    const idx = parseInt(m, 10) - 1;
-    const mn = monthNames[idx] || m;
-    return `${mn} ${y}`;
-  }
+  const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
   function initFilters(rows) {
     // MP filter
@@ -828,24 +829,54 @@
       filterMpEl.appendChild(opt);
     });
 
-    // Month filter
-    const monthSet = new Set();
+    // Year filter
+    const yearSet = new Set();
     rows.forEach(r => {
       const mk = monthKeyFromDateStr(r["Order Date"]);
-      if (mk) monthSet.add(mk);
+      if (!mk) return;
+      const [y] = mk.split("-");
+      yearSet.add(y);
     });
-    const monthList = Array.from(monthSet).sort();
-    filterMonthEl.innerHTML = "";
-    const optAll = document.createElement("option");
-    optAll.value = "ALL";
-    optAll.textContent = "All Months";
-    filterMonthEl.appendChild(optAll);
-    monthList.forEach(mk => {
+    const yearsSorted = Array.from(yearSet).sort();
+    filterYearEl.innerHTML = "";
+    const optAllYear = document.createElement("option");
+    optAllYear.value = "ALL";
+    optAllYear.textContent = "All Years";
+    filterYearEl.appendChild(optAllYear);
+    yearsSorted.forEach(y => {
       const opt = document.createElement("option");
-      opt.value = mk;
-      opt.textContent = monthLabel(mk);
-      filterMonthEl.appendChild(opt);
+      opt.value = y;
+      opt.textContent = y;
+      filterYearEl.appendChild(opt);
     });
+
+    // default year = 2025 if present, else latest
+    if (yearSet.has("2025")) {
+      filterYearEl.value = "2025";
+    } else if (yearsSorted.length) {
+      filterYearEl.value = yearsSorted[yearsSorted.length - 1];
+    } else {
+      filterYearEl.value = "ALL";
+    }
+
+    // Month filter: static 1–12, default = previous month
+    filterMonthEl.innerHTML = "";
+    const optAllMonth = document.createElement("option");
+    optAllMonth.value = "ALL";
+    optAllMonth.textContent = "All Months";
+    filterMonthEl.appendChild(optAllMonth);
+    for (let i = 1; i <= 12; i++) {
+      const opt = document.createElement("option");
+      const val = String(i).padStart(2, "0");
+      opt.value = val;
+      opt.textContent = MONTH_NAMES[i-1];
+      filterMonthEl.appendChild(opt);
+    }
+
+    const today = new Date();
+    const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const prevMonthVal = String(prev.getMonth() + 1).padStart(2, "0");
+    filterMonthEl.value = prevMonthVal;
 
     // Account filter
     const accSet = new Set();
@@ -866,15 +897,24 @@
   function getFilteredRows() {
     let rows = rawRows.slice();
     const mpVal = filterMpEl.value || "ALL";
+    const yearVal = filterYearEl.value || "ALL";
     const monthVal = filterMonthEl.value || "ALL";
     const accVal = filterAccountEl.value || "ALL";
 
     if (mpVal !== "ALL") {
       rows = rows.filter(r => (r["MP"] || "").trim() === mpVal);
     }
-    if (monthVal !== "ALL") {
-      rows = rows.filter(r => monthKeyFromDateStr(r["Order Date"]) === monthVal);
-    }
+
+    // Year + month filter combined
+    rows = rows.filter(r => {
+      const mk = monthKeyFromDateStr(r["Order Date"]);
+      if (!mk) return false;
+      const [y, m] = mk.split("-");
+      if (yearVal !== "ALL" && y !== yearVal) return false;
+      if (monthVal !== "ALL" && m !== monthVal) return false;
+      return true;
+    });
+
     if (accVal !== "ALL") {
       rows = rows.filter(r => (r["ACCOUNT"] || "").trim() === accVal);
     }
@@ -1613,6 +1653,12 @@
     computeAndRender(rows);
   });
 
+  filterYearEl.addEventListener("change", () => {
+    if (!rawRows.length) return;
+    const rows = getFilteredRows();
+    computeAndRender(rows);
+  });
+
   filterMonthEl.addEventListener("change", () => {
     if (!rawRows.length) return;
     const rows = getFilteredRows();
@@ -1643,9 +1689,3 @@
 </script>
 </body>
 </html>
-
-
-
-
-
-
